@@ -179,6 +179,7 @@ module tt_um_gina_env_monitor (
     reg [2:0] target_y;
 
     reg [3:0] target_radius;
+    reg spatial_valid;
 
 
     wire [2:0] x_distance;
@@ -206,7 +207,8 @@ module tt_um_gina_env_monitor (
 
 
     assign inside_target_zone =
-        manhattan_distance <= target_radius;
+        spatial_valid &&
+        (manhattan_distance <= target_radius);
 
 
     // ------------------------------------------------------------
@@ -261,6 +263,7 @@ module tt_um_gina_env_monitor (
             target_y      <= 3'd0;
 
             target_radius <= 4'd0;
+            spatial_valid <= 1'b0;
 
         end
 
@@ -491,10 +494,12 @@ module tt_um_gina_env_monitor (
                     // Current spatial position
                     2'b11:
                     begin
-
+                    
                         current_x <= uio_in[5:3];
                         current_y <= uio_in[2:0];
-
+                    
+                        spatial_valid <= 1'b1;
+                    
                     end
 
                 endcase
