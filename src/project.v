@@ -28,12 +28,12 @@ module tt_um_gina_env_monitor (
      *
      * ui_in[2] = sample_valid / write strobe
      *
-     * ui_in[4:3] = environmental result selector
+     * ui_in[3] = environmental result selector
      *
-     *   00 = latest
-     *   01 = 8-sample average
-     *   10 = minimum
-     *   11 = maximum
+     *   0 = latest measurement
+     *   1 = 8-sample average
+     *
+     * ui_in[4] = unused
      *
      * ui_in[5] = clear environmental statistics
      *
@@ -62,7 +62,12 @@ module tt_um_gina_env_monitor (
      *       |current_y - target_y|
      *
      *   inside_target_zone =
+     *       spatial_valid &&
      *       distance <= target_radius
+     *
+     * Lifetime minimum and maximum measurements are intentionally
+     * handled by the external low-power controller rather than
+     * stored inside this ASIC.
      */
 
 
@@ -72,13 +77,13 @@ module tt_um_gina_env_monitor (
 
     wire [1:0] sensor_type;
     wire       sample_valid;
-    wire [1:0] output_select;
+    wire       output_select;
     wire       clear_stats;
     wire [1:0] mode;
 
     assign sensor_type   = ui_in[1:0];
     assign sample_valid  = ui_in[2];
-    assign output_select = ui_in[4:3];
+    assign output_select = ui_in[3];
     assign clear_stats   = ui_in[5];
     assign mode          = ui_in[7:6];
 
@@ -100,8 +105,6 @@ module tt_um_gina_env_monitor (
     // ------------------------------------------------------------
 
     reg [7:0] temp_latest;
-    reg [7:0] temp_min;
-    reg [7:0] temp_max;
     reg [7:0] temp_average;
 
     reg [10:0] temp_sum;
@@ -118,8 +121,6 @@ module tt_um_gina_env_monitor (
     // ------------------------------------------------------------
 
     reg [7:0] humidity_latest;
-    reg [7:0] humidity_min;
-    reg [7:0] humidity_max;
     reg [7:0] humidity_average;
 
     reg [10:0] humidity_sum;
@@ -136,8 +137,6 @@ module tt_um_gina_env_monitor (
     // ------------------------------------------------------------
 
     reg [7:0] pressure_latest;
-    reg [7:0] pressure_min;
-    reg [7:0] pressure_max;
     reg [7:0] pressure_average;
 
     reg [10:0] pressure_sum;
@@ -167,9 +166,6 @@ module tt_um_gina_env_monitor (
     // Compact spatial engine
     //
     // 3-bit X and Y produce an 8 x 8 local spatial grid.
-    //
-    // This keeps the spatial calculation on the ASIC while
-    // reducing area compared with the earlier 4-bit implementation.
     // ------------------------------------------------------------
 
     reg [2:0] current_x;
@@ -179,6 +175,7 @@ module tt_um_gina_env_monitor (
     reg [2:0] target_y;
 
     reg [3:0] target_radius;
+
     reg spatial_valid;
 
 
@@ -223,29 +220,23 @@ module tt_um_gina_env_monitor (
 
             // Temperature
             temp_latest  <= 8'd0;
-            temp_min     <= 8'hFF;
-            temp_max     <= 8'd0;
             temp_average <= 8'd0;
             temp_sum     <= 11'd0;
             temp_count   <= 4'd0;
 
             // Humidity
             humidity_latest  <= 8'd0;
-            humidity_min     <= 8'hFF;
-            humidity_max     <= 8'd0;
             humidity_average <= 8'd0;
             humidity_sum     <= 11'd0;
             humidity_count   <= 4'd0;
 
             // Pressure
             pressure_latest  <= 8'd0;
-            pressure_min     <= 8'hFF;
-            pressure_max     <= 8'd0;
             pressure_average <= 8'd0;
             pressure_sum     <= 11'd0;
             pressure_count   <= 4'd0;
 
-            // Thresholds
+            // Threshold defaults
             temp_low_threshold      <= 8'd0;
             temp_high_threshold     <= 8'hFF;
 
@@ -255,7 +246,7 @@ module tt_um_gina_env_monitor (
             pressure_low_threshold  <= 8'd0;
             pressure_high_threshold <= 8'hFF;
 
-            // Spatial configuration
+            // Spatial defaults
             current_x     <= 3'd0;
             current_y     <= 3'd0;
 
@@ -263,6 +254,7 @@ module tt_um_gina_env_monitor (
             target_y      <= 3'd0;
 
             target_radius <= 4'd0;
+
             spatial_valid <= 1'b0;
 
         end
@@ -279,20 +271,14 @@ module tt_um_gina_env_monitor (
             if (clear_stats)
             begin
 
-                temp_min     <= 8'hFF;
-                temp_max     <= 8'd0;
                 temp_average <= 8'd0;
                 temp_sum     <= 11'd0;
                 temp_count   <= 4'd0;
 
-                humidity_min     <= 8'hFF;
-                humidity_max     <= 8'd0;
                 humidity_average <= 8'd0;
                 humidity_sum     <= 11'd0;
                 humidity_count   <= 4'd0;
 
-                pressure_min     <= 8'hFF;
-                pressure_max     <= 8'd0;
                 pressure_average <= 8'd0;
                 pressure_sum     <= 11'd0;
                 pressure_count   <= 4'd0;
@@ -384,13 +370,6 @@ module tt_um_gina_env_monitor (
 
                         temp_latest <= uio_in;
 
-                        if (uio_in < temp_min)
-                            temp_min <= uio_in;
-
-                        if (uio_in > temp_max)
-                            temp_max <= uio_in;
-
-
                         if (temp_count == 4'd7)
                         begin
 
@@ -420,13 +399,6 @@ module tt_um_gina_env_monitor (
                     begin
 
                         humidity_latest <= uio_in;
-
-                        if (uio_in < humidity_min)
-                            humidity_min <= uio_in;
-
-                        if (uio_in > humidity_max)
-                            humidity_max <= uio_in;
-
 
                         if (humidity_count == 4'd7)
                         begin
@@ -459,13 +431,6 @@ module tt_um_gina_env_monitor (
 
                         pressure_latest <= uio_in;
 
-                        if (uio_in < pressure_min)
-                            pressure_min <= uio_in;
-
-                        if (uio_in > pressure_max)
-                            pressure_max <= uio_in;
-
-
                         if (pressure_count == 4'd7)
                         begin
 
@@ -494,12 +459,12 @@ module tt_um_gina_env_monitor (
                     // Current spatial position
                     2'b11:
                     begin
-                    
+
                         current_x <= uio_in[5:3];
                         current_y <= uio_in[2:0];
-                    
+
                         spatial_valid <= 1'b1;
-                    
+
                     end
 
                 endcase
@@ -513,6 +478,8 @@ module tt_um_gina_env_monitor (
 
     // ------------------------------------------------------------
     // Environmental anomaly engine
+    //
+    // Anomalies are evaluated using the latest sample.
     // ------------------------------------------------------------
 
     wire temp_low_event;
@@ -558,7 +525,7 @@ module tt_um_gina_env_monitor (
 
 
     // ------------------------------------------------------------
-    // Combined spatial + environmental event
+    // Combined environmental + spatial event
     // ------------------------------------------------------------
 
     wire location_aware_event;
@@ -572,8 +539,8 @@ module tt_um_gina_env_monitor (
     // Status byte
     //
     // bit 7 = location-aware environmental event
-    // bit 6 = environmental anomaly
-    // bit 5 = inside target zone
+    // bit 6 = any environmental anomaly
+    // bit 5 = inside target spatial zone
     // bit 4 = temperature high
     // bit 3 = temperature low
     // bit 2 = humidity high
@@ -596,14 +563,19 @@ module tt_um_gina_env_monitor (
 
 
     // ------------------------------------------------------------
-    // Environmental result multiplexer
+    // Result multiplexer
     //
-    // We intentionally do NOT provide separate target/radius
-    // readback paths. The external controller already knows the
-    // configuration values it programmed.
+    // Environmental channels:
     //
-    // When sensor_type == spatial and mode != status,
-    // the ASIC outputs the calculated Manhattan distance.
+    //   ui_in[3] = 0 -> latest
+    //   ui_in[3] = 1 -> 8-sample average
+    //
+    // Spatial channel:
+    //
+    //   returns calculated Manhattan distance.
+    //
+    // Target/radius readback is intentionally omitted because the
+    // external controller already knows the values it programmed.
     // ------------------------------------------------------------
 
     reg [7:0] normal_result;
@@ -619,21 +591,10 @@ module tt_um_gina_env_monitor (
             2'b00:
             begin
 
-                case (output_select)
-
-                    2'b00:
-                        normal_result = temp_latest;
-
-                    2'b01:
-                        normal_result = temp_average;
-
-                    2'b10:
-                        normal_result = temp_min;
-
-                    2'b11:
-                        normal_result = temp_max;
-
-                endcase
+                if (output_select)
+                    normal_result = temp_average;
+                else
+                    normal_result = temp_latest;
 
             end
 
@@ -642,21 +603,10 @@ module tt_um_gina_env_monitor (
             2'b01:
             begin
 
-                case (output_select)
-
-                    2'b00:
-                        normal_result = humidity_latest;
-
-                    2'b01:
-                        normal_result = humidity_average;
-
-                    2'b10:
-                        normal_result = humidity_min;
-
-                    2'b11:
-                        normal_result = humidity_max;
-
-                endcase
+                if (output_select)
+                    normal_result = humidity_average;
+                else
+                    normal_result = humidity_latest;
 
             end
 
@@ -665,30 +615,15 @@ module tt_um_gina_env_monitor (
             2'b10:
             begin
 
-                case (output_select)
-
-                    2'b00:
-                        normal_result = pressure_latest;
-
-                    2'b01:
-                        normal_result = pressure_average;
-
-                    2'b10:
-                        normal_result = pressure_min;
-
-                    2'b11:
-                        normal_result = pressure_max;
-
-                endcase
+                if (output_select)
+                    normal_result = pressure_average;
+                else
+                    normal_result = pressure_latest;
 
             end
 
 
             // Spatial
-            //
-            // Only expose the calculated distance.
-            //
-            // Zone/event information is available in status mode.
             2'b11:
             begin
 
@@ -706,6 +641,9 @@ module tt_um_gina_env_monitor (
 
     // ------------------------------------------------------------
     // Output
+    //
+    // MODE 11 returns combined environmental/spatial status.
+    // Other modes return normal data.
     // ------------------------------------------------------------
 
     assign uo_out =
@@ -715,10 +653,22 @@ module tt_um_gina_env_monitor (
 
 
     // ------------------------------------------------------------
-    // uio pins are input-only in this design.
+    // Bidirectional pins operate as inputs only.
     // ------------------------------------------------------------
 
     assign uio_out = 8'd0;
     assign uio_oe  = 8'd0;
+
+
+    // ------------------------------------------------------------
+    // Suppress unused ui_in[4] warning.
+    // ------------------------------------------------------------
+
+    wire _unused;
+
+    assign _unused = &{
+        1'b0,
+        ui_in[4]
+    };
 
 endmodule
