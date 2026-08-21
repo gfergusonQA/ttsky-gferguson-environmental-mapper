@@ -146,3 +146,16 @@ Required hardware for a physical demonstration:
 - Jumper wires for connecting the sensor to the demo board
 
 No analog sensor interface is required inside the ASIC because the BME280 performs the environmental sensing and analog-to-digital conversion internally.
+
+------------------------------------
+
+# Next Phase: add more computational functionality
+
+CURRENT CHIP
+latest / min / max / 8-sample avg
+          │
+          ▼
+VERSION 2
++ programmable high/low thresholds
++ trend / rate-of-change detection
++ event/status flags
