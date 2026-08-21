@@ -138,6 +138,24 @@ For the initial Tiny Tapeout implementation, the BME280 is not connected directl
 
 This keeps the ASIC focused on environmental data processing while minimizing logic utilization within the single Tiny Tapeout tile.
 
+---
+
+## Added Cocotb test that checks the updates as well:
+Program temperature thresholds:
+    LOW  = 50
+    HIGH = 100
+
+Send temperature = 75
+    → no anomaly
+
+Send temperature = 110
+    → TEMP_HIGH = 1
+    → ANY_ANOMALY = 1
+
+Send temperature = 40
+    → TEMP_LOW = 1
+    → ANY_ANOMALY = 1
+
 Required hardware for a physical demonstration:
 
 - Tiny Tapeout ASIC
