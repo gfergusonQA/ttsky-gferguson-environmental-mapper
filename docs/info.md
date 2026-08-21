@@ -159,3 +159,28 @@ VERSION 2
 + programmable high/low thresholds
 + trend / rate-of-change detection
 + event/status flags
+
+Temperature:
+- high threshold
+- low threshold
+- rising / falling trend
+
+Humidity:
+- high threshold
+- low threshold
+- rising / falling trend
+
+Pressure:
+- high threshold
+- low threshold
+- rising / falling trend
+
+Status output:
+bit 7 = any anomaly
+bit 6 = temp high/low event
+bit 5 = humidity high/low event
+bit 4 = pressure high/low event
+bit 3 = temp rising/falling
+bit 2 = humidity rising/falling
+bit 1 = pressure rising/falling
+bit 0 = new 8-sample average ready
