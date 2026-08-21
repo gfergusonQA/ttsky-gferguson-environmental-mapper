@@ -29,8 +29,8 @@ pinout:
   ui[3]: "output_select[0]"
   ui[4]: "output_select[1]"
   ui[5]: "clear_stats"
-  ui[6]: "mode[0]"
-  ui[7]: "mode[1]"
+  ui[6]: ""
+  ui[7]: ""
 
   # Outputs
   uo[0]: "result[0]"
