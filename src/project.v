@@ -48,6 +48,24 @@ module tt_um_gina_env_monitor (
     wire       sample_valid;
     wire [1:0] output_select;
     wire       clear_stats;
+    wire [10:0] sensor_value_ext;
+    wire [10:0] temp_next_sum;
+    wire [10:0] humidity_next_sum;
+    wire [10:0] pressure_next_sum;
+    
+    assign temp_next_sum =
+        temp_sum + sensor_value_ext;
+    
+    assign humidity_next_sum =
+        humidity_sum + sensor_value_ext;
+    
+    assign pressure_next_sum =
+        pressure_sum + sensor_value_ext;
+
+    assign sensor_value_ext = {
+        3'b000,
+        uio_in
+    };
 
     assign sensor_type   = ui_in[1:0];
     assign sample_valid  = ui_in[2];
@@ -186,26 +204,20 @@ module tt_um_gina_env_monitor (
 
                         if (temp_count == 4'd7)
                         begin
-
                             temp_average <=
-                                (temp_sum + uio_in) >> 3;
-
+                                (temp_sum + sensor_value_ext) >> 3;
+                        
                             temp_sum   <= 11'd0;
                             temp_count <= 4'd0;
-
                         end
-
                         else
                         begin
-
                             temp_sum <=
-                                temp_sum + uio_in;
-
+                                temp_sum + sensor_value_ext;
+                        
                             temp_count <=
                                 temp_count + 1'b1;
-
                         end
-
                     end
 
 
@@ -227,26 +239,20 @@ module tt_um_gina_env_monitor (
 
                         if (humidity_count == 4'd7)
                         begin
-
                             humidity_average <=
-                                (humidity_sum + uio_in) >> 3;
-
+                                (humidity_sum + sensor_value_ext) >> 3;
+                        
                             humidity_sum   <= 11'd0;
                             humidity_count <= 4'd0;
-
                         end
-
                         else
                         begin
-
                             humidity_sum <=
-                                humidity_sum + uio_in;
-
+                                humidity_sum + sensor_value_ext;
+                        
                             humidity_count <=
                                 humidity_count + 1'b1;
-
                         end
-
                     end
 
 
@@ -268,26 +274,20 @@ module tt_um_gina_env_monitor (
 
                         if (pressure_count == 4'd7)
                         begin
-
                             pressure_average <=
-                                (pressure_sum + uio_in) >> 3;
-
+                                (pressure_sum + sensor_value_ext) >> 3;
+                        
                             pressure_sum   <= 11'd0;
                             pressure_count <= 4'd0;
-
                         end
-
                         else
                         begin
-
                             pressure_sum <=
-                                pressure_sum + uio_in;
-
+                                pressure_sum + sensor_value_ext;
+                        
                             pressure_count <=
                                 pressure_count + 1'b1;
-
                         end
-
                     end
 
 
