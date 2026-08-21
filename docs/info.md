@@ -39,7 +39,13 @@ An external environmental sensor, such as a BME280, provides digitized measureme
 <img width="431" height="441" alt="Screenshot 2026-08-21 at 4 21 56 PM" src="https://github.com/user-attachments/assets/992cb916-2199-4820-addc-33574a0d1ac5" />
 
 
-The measurement type is selected using `ui_in[1:0]`:
+- Latest measurement
+- Minimum measurement
+- Maximum measurement
+- Eight-sample average
+- Programmable low threshold
+- Programmable high threshold
+- High/low anomaly detection
 
 | `ui_in[1:0]` | Data type |
 |---|---|
