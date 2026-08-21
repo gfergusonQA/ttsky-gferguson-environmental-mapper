@@ -48,29 +48,30 @@ module tt_um_gina_env_monitor (
     wire       sample_valid;
     wire [1:0] output_select;
     wire       clear_stats;
+
     wire [10:0] sensor_value_ext;
+
     wire [10:0] temp_next_sum;
     wire [10:0] humidity_next_sum;
     wire [10:0] pressure_next_sum;
-    
-    assign temp_next_sum =
-        temp_sum + sensor_value_ext;
-    
-    assign humidity_next_sum =
-        humidity_sum + sensor_value_ext;
-    
-    assign pressure_next_sum =
-        pressure_sum + sensor_value_ext;
 
-    assign sensor_value_ext = {
-        3'b000,
-        uio_in
-    };
+
+    // ------------------------------------------------------------
+    // Input decoding
+    // ------------------------------------------------------------
 
     assign sensor_type   = ui_in[1:0];
     assign sample_valid  = ui_in[2];
     assign output_select = ui_in[4:3];
     assign clear_stats   = ui_in[5];
+
+
+    // Zero-extend the 8-bit sensor measurement to match the
+    // 11-bit accumulators.
+    assign sensor_value_ext = {
+        3'b000,
+        uio_in
+    };
 
 
     // ------------------------------------------------------------
@@ -116,14 +117,31 @@ module tt_um_gina_env_monitor (
 
 
     // ------------------------------------------------------------
+    // Extended accumulator calculations
+    // ------------------------------------------------------------
+
+    assign temp_next_sum =
+        temp_sum + sensor_value_ext;
+
+    assign humidity_next_sum =
+        humidity_sum + sensor_value_ext;
+
+    assign pressure_next_sum =
+        pressure_sum + sensor_value_ext;
+
+
+    // ------------------------------------------------------------
     // Sample processing
     //
     // Eight samples are accumulated.
     //
     // Average = sum / 8
-    //         = sum >> 3
     //
-    // This is intentionally cheap in hardware.
+    // Since the sum is 11 bits wide, selecting bits [10:3]
+    // performs an unsigned division by eight while producing
+    // an explicit 8-bit result.
+    //
+    // This avoids a general-purpose hardware divider.
     // ------------------------------------------------------------
 
     always @(posedge clk)
@@ -204,20 +222,26 @@ module tt_um_gina_env_monitor (
 
                         if (temp_count == 4'd7)
                         begin
+
                             temp_average <=
-                                (temp_sum + sensor_value_ext) >> 3;
-                        
+                                temp_next_sum[10:3];
+
                             temp_sum   <= 11'd0;
                             temp_count <= 4'd0;
+
                         end
+
                         else
                         begin
+
                             temp_sum <=
-                                temp_sum + sensor_value_ext;
-                        
+                                temp_next_sum;
+
                             temp_count <=
                                 temp_count + 1'b1;
+
                         end
+
                     end
 
 
@@ -239,20 +263,26 @@ module tt_um_gina_env_monitor (
 
                         if (humidity_count == 4'd7)
                         begin
+
                             humidity_average <=
-                                (humidity_sum + sensor_value_ext) >> 3;
-                        
+                                humidity_next_sum[10:3];
+
                             humidity_sum   <= 11'd0;
                             humidity_count <= 4'd0;
+
                         end
+
                         else
                         begin
+
                             humidity_sum <=
-                                humidity_sum + sensor_value_ext;
-                        
+                                humidity_next_sum;
+
                             humidity_count <=
                                 humidity_count + 1'b1;
+
                         end
+
                     end
 
 
@@ -274,23 +304,30 @@ module tt_um_gina_env_monitor (
 
                         if (pressure_count == 4'd7)
                         begin
+
                             pressure_average <=
-                                (pressure_sum + sensor_value_ext) >> 3;
-                        
+                                pressure_next_sum[10:3];
+
                             pressure_sum   <= 11'd0;
                             pressure_count <= 4'd0;
+
                         end
+
                         else
                         begin
+
                             pressure_sum <=
-                                pressure_sum + sensor_value_ext;
-                        
+                                pressure_next_sum;
+
                             pressure_count <=
                                 pressure_count + 1'b1;
+
                         end
+
                     end
 
 
+                    // Reserved sensor type
                     default:
                     begin
                     end
@@ -305,7 +342,7 @@ module tt_um_gina_env_monitor (
 
 
     // ------------------------------------------------------------
-    // Result mux
+    // Result multiplexer
     // ------------------------------------------------------------
 
     reg [7:0] result;
@@ -316,6 +353,10 @@ module tt_um_gina_env_monitor (
         result = 8'd0;
 
         case (sensor_type)
+
+            // ----------------------------------------------------
+            // Temperature
+            // ----------------------------------------------------
 
             2'b00:
             begin
@@ -339,6 +380,10 @@ module tt_um_gina_env_monitor (
             end
 
 
+            // ----------------------------------------------------
+            // Humidity
+            // ----------------------------------------------------
+
             2'b01:
             begin
 
@@ -360,6 +405,10 @@ module tt_um_gina_env_monitor (
 
             end
 
+
+            // ----------------------------------------------------
+            // Pressure
+            // ----------------------------------------------------
 
             2'b10:
             begin
@@ -391,15 +440,22 @@ module tt_um_gina_env_monitor (
     end
 
 
+    // ------------------------------------------------------------
+    // Tiny Tapeout outputs
+    // ------------------------------------------------------------
+
     assign uo_out = result;
 
 
-    // uio pins operate as inputs only.
+    // uio pins operate as inputs only in this design.
     assign uio_out = 8'd0;
     assign uio_oe  = 8'd0;
 
 
-    // Suppress unused input warning.
+    // ------------------------------------------------------------
+    // Suppress unused input warnings
+    // ------------------------------------------------------------
+
     wire _unused;
 
     assign _unused = &{
