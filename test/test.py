@@ -308,3 +308,150 @@ async def test_clear_statistics(dut):
 
     assert minimum == 70
     assert maximum == 70
+
+
+@cocotb.test()
+async def test_temperature_threshold_anomalies(dut):
+
+    cocotb.start_soon(
+        Clock(
+            dut.clk,
+            10,
+            unit="ns"
+        ).start()
+    )
+
+    await reset_dut(dut)
+
+    # --------------------------------------------------------
+    # Program temperature LOW threshold = 50
+    #
+    # mode = 01 -> ui_in[7:6]
+    # sensor_type = 00 -> temperature
+    # sample_valid = 1 -> ui_in[2]
+    # --------------------------------------------------------
+
+    dut.uio_in.value = 50
+
+    dut.ui_in.value = (
+        (0b01 << 6) |
+        (1 << 2) |
+        SENSOR_TEMP
+    )
+
+    await RisingEdge(dut.clk)
+
+    dut.ui_in.value = 0
+
+    await RisingEdge(dut.clk)
+
+
+    # --------------------------------------------------------
+    # Program temperature HIGH threshold = 100
+    #
+    # mode = 10
+    # --------------------------------------------------------
+
+    dut.uio_in.value = 100
+
+    dut.ui_in.value = (
+        (0b10 << 6) |
+        (1 << 2) |
+        SENSOR_TEMP
+    )
+
+    await RisingEdge(dut.clk)
+
+    dut.ui_in.value = 0
+
+    await RisingEdge(dut.clk)
+
+
+    # --------------------------------------------------------
+    # Send normal temperature = 75
+    #
+    # mode = 00
+    # --------------------------------------------------------
+
+    await send_sample(
+        dut,
+        SENSOR_TEMP,
+        75
+    )
+
+
+    # Read status
+    # mode = 11
+
+    dut.ui_in.value = (
+        (0b11 << 6) |
+        SENSOR_TEMP
+    )
+
+    await Timer(1, unit="ns")
+
+    status = int(dut.uo_out.value)
+
+    assert status == 0
+
+
+    # --------------------------------------------------------
+    # Send HIGH temperature = 110
+    # --------------------------------------------------------
+
+    dut.ui_in.value = 0
+
+    await send_sample(
+        dut,
+        SENSOR_TEMP,
+        110
+    )
+
+    dut.ui_in.value = (
+        (0b11 << 6) |
+        SENSOR_TEMP
+    )
+
+    await Timer(1, unit="ns")
+
+    status = int(dut.uo_out.value)
+
+    # bit 7 = any anomaly
+    # bit 6 = temperature high
+
+    assert status & (1 << 7)
+    assert status & (1 << 6)
+
+    # low flag should NOT be set
+    assert not (status & (1 << 5))
+
+
+    # --------------------------------------------------------
+    # Send LOW temperature = 40
+    # --------------------------------------------------------
+
+    dut.ui_in.value = 0
+
+    await send_sample(
+        dut,
+        SENSOR_TEMP,
+        40
+    )
+
+    dut.ui_in.value = (
+        (0b11 << 6) |
+        SENSOR_TEMP
+    )
+
+    await Timer(1, unit="ns")
+
+    status = int(dut.uo_out.value)
+
+    # bit 7 = any anomaly
+    # bit 5 = temperature low
+
+    assert status & (1 << 7)
+    assert status & (1 << 5)
+
+    # high flag should NOT be set
+    assert not (status & (1 << 6))
