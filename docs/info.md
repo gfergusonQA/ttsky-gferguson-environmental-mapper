@@ -16,6 +16,7 @@ The design supports three independent environmental measurement channels:
 - Temperature
 - Relative humidity
 - Atmospheric pressure
+- V2: Programmable Thresholds (See end of doc)
 
 An external environmental sensor provides digitized measurements to the system. Each measurement is represented as an unsigned 8-bit value and supplied to the ASIC through `uio_in[7:0]`.
 
