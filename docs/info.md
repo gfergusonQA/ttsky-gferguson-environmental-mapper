@@ -7,180 +7,396 @@ You can also include images in this folder and reference them in the markdown. E
 512 kb in size, and the combined size of all images must be less than 1 MB.
 -->
 
+# Environmental + Spatial Edge Processor
+
 ## How it works
 
-The Environmental Mapping Processor is a small digital ASIC designed to process environmental measurements for field monitoring and geospatial data-collection applications.
+The Environmental + Spatial Edge Processor is a small digital ASIC designed for low-power environmental monitoring and location-aware field data collection.
 
-The design supports three independent environmental measurement channels:
+<img width="1536" height="1024" alt="Tricorder" src="https://github.com/user-attachments/assets/115af43a-db4c-475f-84a1-699c713daaa4" />
+
+
+The design combines two hardware-processing functions:
+
+1. **Environmental processing** for temperature, humidity, and atmospheric pressure.
+2. **Spatial processing** for determining whether a device is within a configurable distance of a target location.
+
+The ASIC is intended to operate as part of a portable environmental mapping device. External sensors and a GNSS receiver provide measurements and position information through a small low-power controller, while the ASIC performs the environmental and spatial edge-processing operations.
+
+---
+
+## Environmental processing
+
+The ASIC supports three independent environmental measurement channels:
 
 - Temperature
 - Relative humidity
 - Atmospheric pressure
 
-An external environmental sensor provides digitized measurements to the system. Each measurement is represented as an unsigned 8-bit value and supplied to the ASIC through `uio_in[7:0]`.
+An external environmental sensor, such as a BME280, provides digitized measurements to a small external controller. The controller converts the measurements into the unsigned 8-bit representation expected by the ASIC.
+
+<img width="382" height="606" alt="Screenshot 2026-08-21 at 2 32 38 PM" src="https://github.com/user-attachments/assets/b4b6c5e3-8ae8-4173-8495-e13103d5c842" />
+<img width="431" height="441" alt="Screenshot 2026-08-21 at 4 21 56 PM" src="https://github.com/user-attachments/assets/992cb916-2199-4820-addc-33574a0d1ac5" />
+
 
 The measurement type is selected using `ui_in[1:0]`:
 
-| `ui_in[1:0]` | Measurement |
+| `ui_in[1:0]` | Data type |
 |---|---|
 | `00` | Temperature |
 | `01` | Humidity |
 | `10` | Pressure |
-| `11` | Reserved |
+| `11` | Spatial data |
 
-When `ui_in[2]` (`sample_valid`) is asserted for a clock cycle, the ASIC captures the value on `uio_in[7:0]` and updates the statistics for the selected environmental channel.
+When `ui_in[2]` (`sample_valid`) is asserted, the ASIC captures the value on `uio_in[7:0]`.
 
-Each channel independently maintains:
+Each environmental channel independently maintains:
 
 - Latest measurement
-- Minimum observed measurement
-- Maximum observed measurement
 - Eight-sample average
+- Programmable low threshold
+- Programmable high threshold
+- Low/high anomaly detection
 
-The average is calculated in hardware using an accumulator. Eight consecutive measurements of the same type are summed, and the resulting value is divided by eight using a three-bit right shift. This avoids the area cost of implementing a general-purpose hardware divider and is suitable for the limited area of a single Tiny Tapeout tile.
+The eight-sample average is calculated using an accumulator. Eight consecutive measurements of the same environmental type are summed and divided by eight using a three-bit right shift.
 
-The desired processed result is selected with `ui_in[4:3]`:
+This avoids the area cost of implementing a general-purpose hardware divider.
 
-| `ui_in[4:3]` | Output |
+### Reading environmental results
+
+`ui_in[3]` selects the environmental result:
+
+| `ui_in[3]` | Result |
 |---|---|
-| `00` | Latest measurement |
-| `01` | Eight-sample average |
-| `10` | Minimum measurement |
-| `11` | Maximum measurement |
+| `0` | Latest measurement |
+| `1` | Eight-sample average |
 
-The selected 8-bit result is continuously presented on `uo_out[7:0]`.
+`ui_in[4]` is unused.
 
-`ui_in[5]` clears the accumulated statistics, minimums, maximums, sample counters, and calculated averages.
+The selected 8-bit result is presented on `uo_out[7:0]`.
 
-The design is intended to act as a low-area environmental data-processing core. A future field-deployed system could associate the processed environmental observations with geographic locations to produce datasets for GIS analysis and environmental mapping.
+`ui_in[5]` clears the accumulated averaging state.
 
-## How to test
+### Minimum and maximum measurements
 
-Set `ena` high to enable the design.
+Lifetime minimum and maximum measurements are intentionally **not stored inside the ASIC**.
 
-Reset the ASIC by driving `rst_n` low for at least two clock cycles and then driving `rst_n` high.
+In the complete portable system, the external low-power controller can maintain min/max values in its own memory and optionally store long-term observations on a microSD card.
 
-### Submit a measurement
+Moving this historical bookkeeping outside the ASIC reduces silicon utilization while preserving the more specialized environmental and spatial processing in hardware.
 
-1. Select the environmental measurement type using `ui_in[1:0]`:
+---
 
-   - `00` = Temperature
-   - `01` = Humidity
-   - `10` = Pressure
+## Programmable environmental thresholds
 
-2. Place an unsigned 8-bit measurement value on `uio_in[7:0]`.
+Each environmental channel contains programmable low and high thresholds.
 
-3. Drive `ui_in[2]` (`sample_valid`) high.
+The operating mode is selected using `ui_in[7:6]`:
 
-4. Allow one rising edge of `clk` to occur.
+| `ui_in[7:6]` | Operation |
+|---|---|
+| `00` | Submit normal sample/current position |
+| `01` | Program low threshold/spatial target |
+| `10` | Program high threshold/spatial radius |
+| `11` | Read combined status |
 
-5. Drive `ui_in[2]` low before submitting the next measurement.
+For example, a temperature channel could be configured with:
 
-The ASIC will store the measurement and update the statistics for the selected channel.
+    LOW  = 50
+    HIGH = 100
 
-### Read a result
+A temperature measurement of `75` produces no anomaly.
 
-Keep the desired measurement type selected with `ui_in[1:0]`.
+A measurement of `110` produces a high-temperature anomaly.
 
-Select the result using `ui_in[4:3]`:
+A measurement of `40` produces a low-temperature anomaly.
 
-- `00` = Latest measurement
-- `01` = Eight-sample average
-- `10` = Minimum measurement
-- `11` = Maximum measurement
+The ASIC performs these comparisons directly in hardware.
 
-Read the resulting value from `uo_out[7:0]`.
+---
 
-For example, submitting the following eight temperature samples:
+# Spatial processing
 
-`64, 66, 68, 70, 72, 74, 76, 78`
+The ASIC also contains a compact spatial-processing engine.
 
-should produce:
+It operates on an **8 × 8 local coordinate grid** using 3-bit X and Y coordinates:
 
-- Latest = `78`
-- Minimum = `64`
-- Maximum = `78`
-- Eight-sample average = `71`
+    X = 0–7
+    Y = 0–7
 
-Temperature, humidity, and pressure statistics are maintained independently, so measurements may be submitted to the three channels without overwriting the state of the other channels.
+The external controller is responsible for obtaining real-world position information, such as GNSS latitude and longitude, and translating that position into the local coordinate representation used by the ASIC.
 
-To clear the accumulated statistics, drive `ui_in[5]` high for one clock cycle.
+The ASIC itself then performs the spatial calculations.
 
-The Cocotb test suite in `test/test.py` automatically verifies:
+It stores:
 
-- Latest-value tracking
-- Minimum-value tracking
-- Maximum-value tracking
+- Current X coordinate
+- Current Y coordinate
+- Target X coordinate
+- Target Y coordinate
+- Target radius
+
+---
+
+## Manhattan distance engine
+
+The ASIC calculates Manhattan distance between the current position and the configured target:
+
+    distance =
+        |current_x - target_x|
+        +
+        |current_y - target_y|
+
+For example:
+
+    Target  = (3, 4)
+    Current = (4, 5)
+
+The ASIC calculates:
+
+    |4 - 3| + |5 - 4|
+        = 1 + 1
+        = 2
+
+The calculated distance can be read from the ASIC output when the spatial channel is selected.
+
+---
+
+## Spatial radius / zone detection
+
+A programmable radius defines a target zone.
+
+The ASIC evaluates:
+
+    inside_target_zone =
+        distance <= target_radius
+
+For example:
+
+    Target  = (3, 4)
+    Radius  = 3
+    Current = (4, 5)
+
+produces:
+
+    Distance = 2
+    2 <= 3
+
+Therefore:
+
+    inside_target_zone = 1
+
+If the device moves to:
+
+    Current = (7, 7)
+
+the ASIC calculates:
+
+    |7 - 3| + |7 - 4|
+        = 4 + 3
+        = 7
+
+Since:
+
+    7 > 3
+
+the device is outside the configured target zone.
+
+Spatial zone detection does not become active until a valid current location has been supplied.
+
+---
+
+# Location-aware environmental events
+
+The environmental and spatial engines can operate together.
+
+The ASIC generates a location-aware environmental event when:
+
+    environmental anomaly
+            AND
+    inside target spatial zone
+
+are both true.
+
+This allows the hardware to answer questions such as:
+
+> Is an abnormal environmental condition occurring within the geographic area I am monitoring?
+
+For example:
+
+    Target location = (3, 3)
+    Radius          = 2
+    Current         = (4, 3)
+    Temperature     = 120
+    High threshold  = 100
+
+The spatial engine determines that the current location is inside the target zone.
+
+The environmental engine determines that the temperature exceeds its programmed threshold.
+
+The ASIC therefore asserts the combined location-aware environmental event.
+
+If the device moves outside the target zone, the environmental anomaly may remain active while the combined location-aware event becomes inactive.
+
+---
+
+## Status output
+
+When `ui_in[7:6] = 11`, `uo_out[7:0]` provides the combined status byte:
+
+| Bit | Meaning |
+|---:|---|
+| 7 | Location-aware environmental event |
+| 6 | Any environmental anomaly |
+| 5 | Inside target spatial zone |
+| 4 | Temperature high |
+| 3 | Temperature low |
+| 2 | Humidity high |
+| 1 | Humidity low |
+| 0 | Pressure anomaly |
+
+This provides a compact hardware status interface for an external controller or display system.
+
+---
+
+# How to test
+
+Set `ena` high and reset the ASIC by driving `rst_n` low for at least two clock cycles, then drive `rst_n` high.
+
+## Submit an environmental measurement
+
+1. Select the environmental channel with `ui_in[1:0]`.
+2. Place the unsigned 8-bit measurement on `uio_in[7:0]`.
+3. Set `ui_in[7:6] = 00`.
+4. Assert `ui_in[2]` (`sample_valid`).
+5. Allow a rising edge of `clk`.
+6. Deassert `sample_valid`.
+
+For example, submitting these eight temperature samples:
+
+    64, 66, 68, 70, 72, 74, 76, 78
+
+produces:
+
+    Latest  = 78
+    Average = 71
+
+Temperature, humidity, and pressure averaging state is maintained independently.
+
+---
+
+## Configure a spatial target
+
+Select the spatial channel:
+
+    ui_in[1:0] = 11
+
+Set:
+
+    ui_in[7:6] = 01
+
+Place the target coordinates on:
+
+    uio_in[5:3] = target X
+    uio_in[2:0] = target Y
+
+Assert `sample_valid` for one clock cycle.
+
+---
+
+## Configure the target radius
+
+Select:
+
+    ui_in[1:0] = 11
+    ui_in[7:6] = 10
+
+Place the radius on:
+
+    uio_in[3:0]
+
+Assert `sample_valid` for one clock cycle.
+
+---
+
+## Submit the current position
+
+Select:
+
+    ui_in[1:0] = 11
+    ui_in[7:6] = 00
+
+Place the current coordinates on:
+
+    uio_in[5:3] = current X
+    uio_in[2:0] = current Y
+
+Assert `sample_valid` for one clock cycle.
+
+The ASIC then calculates the Manhattan distance and determines whether the current location is inside the configured target radius.
+
+---
+
+# Cocotb verification
+
+The Cocotb test suite verifies:
+
+- Latest temperature, humidity, and pressure values
 - Eight-sample averaging
-- Independent temperature, humidity, and pressure channels
-- Statistics reset behavior
+- Independent environmental channels
+- Clearing accumulated averaging state
+- Programmable environmental thresholds
+- Environmental anomaly detection
+- Spatial target programming
+- Spatial radius programming
+- Current-position updates
+- Manhattan distance calculation
+- Inside/outside target-zone detection
+- Combined location-aware environmental events
 
-The RTL tests can be run using the Tiny Tapeout test environment:
+The RTL tests can be run using:
 
     cd test
     make
 
-The GitHub Actions workflows additionally run the Tiny Tapeout test, lint, synthesis, physical-design, and precheck flows.
+GitHub Actions additionally runs the Tiny Tapeout automated test, documentation, synthesis, physical-design, and precheck workflows.
 
-## External hardware
+---
 
-The ASIC processes already digitized environmental measurements and therefore requires an external sensor to obtain real-world environmental data.
+# External hardware
 
-The intended sensor is a **BME280 environmental sensor breakout**, which provides:
+The ASIC performs digital processing and does not directly contain environmental sensors, GNSS reception, a display, or long-term storage.
 
-- Temperature
-- Relative humidity
-- Atmospheric pressure
+A future portable implementation is intended to combine the ASIC with:
 
-The BME280 supports digital communication using I2C or SPI.
+- Low-power GNSS receiver with integrated antenna
+- BME280 temperature/humidity/pressure sensor
+- Low-power microcontroller
+- Small Memory LCD
+- microSD storage
+- Rechargeable LiPo battery
+- Low-power voltage regulation and charging circuitry
+- Wake/power button
 
-For the initial Tiny Tapeout implementation, the BME280 is not connected directly to an I2C controller inside the ASIC. Instead, the Tiny Tapeout demo board microcontroller can communicate with the BME280, convert the sensor measurements into the compact 8-bit representation expected by the ASIC, and present those measurements to `uio_in[7:0]`.
+The BME280 is not a permanent requirement. Other digital environmental sensors could be used as long as the external controller translates their measurements into the input representation expected by the ASIC.
 
-This keeps the ASIC focused on environmental data processing while minimizing logic utilization within the single Tiny Tapeout tile.
+The controller would handle:
 
-Required hardware for a physical demonstration:
+- GNSS communication
+- Environmental sensor communication
+- Conversion of GNSS coordinates into the ASIC's local X/Y grid
+- Lifetime minimum/maximum tracking
+- Display control
+- microSD logging
+- Power-management coordination
 
-- Tiny Tapeout ASIC
-- Tiny Tapeout demo board
-- BME280 temperature/humidity/pressure sensor breakout
-- Jumper wires for connecting the sensor to the demo board
+The ASIC remains responsible for the dedicated edge-processing operations:
 
-No analog sensor interface is required inside the ASIC because the BME280 performs the environmental sensing and analog-to-digital conversion internally.
+- Environmental averaging
+- Threshold comparisons
+- Environmental anomaly detection
+- Manhattan spatial distance
+- Target-zone detection
+- Combined location-aware environmental event detection
 
-------------------------------------
-
-# Next Phase: add more computational functionality
-
-CURRENT CHIP
-latest / min / max / 8-sample avg
-          │
-          ▼
-VERSION 2
-+ programmable high/low thresholds
-+ trend / rate-of-change detection
-+ event/status flags
-
-Temperature:
-- high threshold
-- low threshold
-- rising / falling trend
-
-Humidity:
-- high threshold
-- low threshold
-- rising / falling trend
-
-Pressure:
-- high threshold
-- low threshold
-- rising / falling trend
-
-Status output:
-bit 7 = any anomaly
-bit 6 = temp high/low event
-bit 5 = humidity high/low event
-bit 4 = pressure high/low event
-bit 3 = temp rising/falling
-bit 2 = humidity rising/falling
-bit 1 = pressure rising/falling
-bit 0 = new 8-sample average ready
+This architecture allows the environmental and spatial calculations to remain implemented as dedicated digital hardware while leaving communication, storage, display, and long-term historical data management to the external low-power controller.
