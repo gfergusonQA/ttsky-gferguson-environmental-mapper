@@ -400,3 +400,8 @@ The ASIC remains responsible for the dedicated edge-processing operations:
 - Combined location-aware environmental event detection
 
 This architecture allows the environmental and spatial calculations to remain implemented as dedicated digital hardware while leaving communication, storage, display, and long-term historical data management to the external low-power controller.
+
+--
+#Other Parts Needed:
+<img width="1203" height="581" alt="Screenshot 2026-08-21 at 3 50 59 PM" src="https://github.com/user-attachments/assets/56e370c9-2b0a-488f-895b-e05cb9a032b9" />
+
